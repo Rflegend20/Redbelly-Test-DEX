@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+contract AMMDex {
+    address public token;
+    uint public totalLiquidity;
+    mapping(address => uint) public liquidity;
+    mapping(address => uint) public balances;
+
+    event LiquidityAdded(address indexed provider, uint indexed amount);
+    event TokensPurchased(address indexed buyer, uint indexed tokensBought, uint indexed ethSpent);
+
+   constructor(address /*_token*/) {
+    token = 0x5344E9A160d0C735540B56972ddf4723748195e1;
+}
+
+    function addLiquidity() external payable {
+        require(msg.value > 0, "Must provide ETH");
+        uint liquidityTokens = (totalLiquidity == 0) ? msg.value : (msg.value * totalLiquidity) / address(this).balance;
+        
+        totalLiquidity += msg.value;
+        liquidity[msg.sender] += liquidityTokens;
+        balances[msg.sender] += msg.value;
+
+        emit LiquidityAdded(msg.sender, msg.value);
+    }
+
+    function buyTokens(uint tokensToBuy) external payable {
+        require(tokensToBuy > 0, "Must buy at least one token");
+        require(totalLiquidity > 0, "No liquidity in the pool");
+
+        uint ethSpent = (tokensToBuy * address(this).balance) / totalLiquidity;
+
+        require(ethSpent <= msg.value, "Insufficient ETH provided");
+
+        uint liquidityTokens = (tokensToBuy * totalLiquidity) / address(this).balance;
+        require(liquidity[msg.sender] >= liquidityTokens, "Insufficient liquidity");
+
+        // Adjust balances and liquidity
+        balances[msg.sender] += ethSpent;
+        liquidity[msg.sender] -= liquidityTokens;
+        totalLiquidity -= ethSpent;
+
+        // Transfer tokens
+        IERC20(token).transfer(msg.sender, tokensToBuy);
+
+        // Refund excess ETH
+        if (msg.value > ethSpent) {
+            payable(msg.sender).transfer(msg.value - ethSpent);
+        }
+
+        emit TokensPurchased(msg.sender, tokensToBuy, ethSpent);
+    }
+}
